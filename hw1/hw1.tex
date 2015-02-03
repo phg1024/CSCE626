@@ -1,0 +1,85 @@
+\documentclass{article}
+\usepackage{amsmath,amssymb, amsthm,latexsym,paralist}
+
+\usepackage{graphicx}
+
+\usepackage{listings}
+\usepackage{color}
+
+\definecolor{dkgreen}{rgb}{0,0.6,0}
+\definecolor{gray}{rgb}{0.5,0.5,0.5}
+\definecolor{mauve}{rgb}{0.58,0,0.82}
+
+\lstset{frame=tb,
+  language=c++,
+  aboveskip=3mm,
+  belowskip=3mm,
+  showstringspaces=false,
+  columns=flexible,
+  basicstyle={\small\ttfamily},
+  numbers=none,
+  numberstyle=\tiny\color{gray},
+  keywordstyle=\color{blue},
+  commentstyle=\color{dkgreen},
+  stringstyle=\color{mauve},
+  breaklines=true,
+  breakatwhitespace=true
+  tabsize=3
+}
+
+\theoremstyle{definition}
+\newenvironment{problem}[1]{\noindent\textbf{Problem #1.}}{\\}
+\newenvironment{solution}{\noindent\textbf{Solution.}}{}
+\newenvironment{solutionitem}[1]{#1}{\bigbreak}
+
+\newcommand{\name}[1]{\noindent\textbf{Name}: #1}
+\newcommand{\uin}[1]{\noindent\textbf{UIN}: #1\\}
+
+\newcommand{\problemset}[1]{\begin{center}\textbf{Homework #1}\end{center}}
+\newcommand{\duedate}[2]{\begin{quote}\textbf{Due dates:} Electronic
+    submission of hw1.tex and hw1.pdf files of this homework is due on
+    \textbf{#1} on \texttt{https://csnet.cs.tamu.edu}.  A signed paper copy of the pdf file is due on
+    \textbf{#2} at the beginning of class.\end{quote} }
+
+
+\begin{document}
+\begin{center}
+{\large
+CSCE 626 - Parallel Algorithm Design and Analysis}
+\end{center}
+\problemset{1}
+\name{ Peihong Guo }
+\uin{421003404}
+\begin{problem}{1}  Given a sequence of numbers $x_1, x_2, \ldots, x_n$, the prefix sums are the partial sums
+\[
+\begin{split}
+& s_1 = x_1 \\
+& s_2 = x_1 + x_2 \\
+& \ldots \\
+& s_n = x_1 + x_2 + ... + x_n
+\end{split}
+\]
+Describe an algorithm to compute the prefix sums on a PRAM with $n$
+processors in $O(\log n)$ time. Analyze the running time of your
+algorithm and argue, at least informally, its correctness.
+Which PRAM model does your algorithm use (e.g., EREW, CREW, CRCW)?
+Does your algorithm require a synchronous PRAM?
+\end{problem}
+
+\begin{solution}
+\begin{solutionitem}{(a)}
+\end{solutionitem}
+\end{solution}
+
+\begin{problem}{2} Repeat the previous question, but this time consider
+  the case when $p < n$, i.e., the number of processors is less than
+  the number of input elements. You should design the best algorithm
+  you can in terms of time and work. Analyze the running time of your
+  algorithms and argue, at least informally, their correctness.
+  (If an algorithm is similar to the corresponding one from 2, you need only discuss the modifications.)
+\end{problem}
+
+
+\goodbreak
+%\checklist
+\end{document}
