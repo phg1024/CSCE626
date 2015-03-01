@@ -62,6 +62,7 @@ int main(int argc, char *argv[]) {
   vector<long> data;
   vector<long> partial_sums;
   vector<long> prefix_sums;
+  vector<long> ps_partial_sums;
 
   struct timeval start, end;   /* gettimeofday stuff */
   struct timezone tzp;
@@ -86,6 +87,8 @@ int main(int argc, char *argv[]) {
   prefix_sums.resize(numints);
 
   partial_sums.resize(numprocs);
+
+  ps_partial_sums.resize(numprocs+1, 0);
 
   /* Set number of threads */
   omp_set_num_threads(numprocs);
@@ -122,7 +125,7 @@ int main(int argc, char *argv[]) {
 
   for(int iteration=0; iteration < numiterations; ++iteration) {
 
-    #pragma omp parallel shared(numints_per_proc,data,prefix_sums,partial_sums)
+    #pragma omp parallel shared(numints_per_proc,data,prefix_sums,partial_sums, ps_partial_sums)
     {
       int tid;
 
@@ -136,25 +139,16 @@ int main(int argc, char *argv[]) {
 
       /* Write the partial result to share memory */
       partial_sums[tid] = prefix_sums[pos1-1];
-    }
 
-    /* Compute the prefix sum of the partial sums */
-    vector<long> ps_partial_sums(partial_sums.size()+1, 0);
-    std::partial_sum(partial_sums.begin(), partial_sums.end(), ps_partial_sums.begin()+1);
+      #pragma omp barrier
+      if( tid == 0 ) {
+        /* Compute the prefix sum of the partial sums */
+        std::partial_sum(partial_sums.begin(), partial_sums.end(), ps_partial_sums.begin() + 1);
+      }
 
-    /* Compute the final prefix sums */
-    #pragma omp parallel shared(numints_per_proc,data,prefix_sums,partial_sums)
-    {
-      int tid;
-
-      /* get the current thread ID in the parallel region */
-      tid = omp_get_thread_num();
-
+      #pragma omp barrier
       /* get the prefix sum of the partial sums */
       long ps = ps_partial_sums[tid];
-
-      int pos0 = tid*numints_per_proc;
-      int pos1 = std::min(pos0+numints_per_proc, numints);
 
       /* add it back to the prefix sums */
       std::for_each(prefix_sums.begin()+pos0, prefix_sums.begin()+pos1, [=](long &x){ x+=ps;});
