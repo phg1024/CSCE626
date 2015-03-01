@@ -3,7 +3,7 @@
 #
 # prompt> make
 #
-CC     = g++     # the c compiler to use
+CC     = icpc     # the c compiler to use
 MPICC  = mpic++  # the MPI cc compiler
 CFLAGS = -O3 -std=c++11  # optimize code
 DFLAGS =         # common defines
@@ -17,7 +17,7 @@ all: sum_openmp sum_mpi sum_mpi2 test
 #
 
 sum_openmp:sum_openmp.cpp
-	$(CC) $(CFLAGS) $(DFLAGS) -fopenmp  -o $@  $@.cpp
+	$(CC) $(CFLAGS) $(DFLAGS) -openmp  -o $@  $@.cpp
 
 #
 # MPI summation demo programs

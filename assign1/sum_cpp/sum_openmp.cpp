@@ -31,23 +31,28 @@
 using namespace std;
 
 /*==============================================================
- * print_elapsed (prints timing statistics)
+ * compute elapsed time between start and end
  *==============================================================*/
-void print_elapsed(const char* desc, struct timeval* start, struct timeval* end, int niters) {
-
+long elapsed(struct timeval *start, struct timeval *end) {
   struct timeval elapsed;
   /* calculate elapsed time */
   if(start->tv_usec > end->tv_usec) {
-
     end->tv_usec += 1000000;
     end->tv_sec--;
   }
   elapsed.tv_usec = end->tv_usec - start->tv_usec;
   elapsed.tv_sec  = end->tv_sec  - start->tv_sec;
-
-  printf("\n %s total elapsed time = %ld (usec)",
-    desc, (elapsed.tv_sec*1000000 + elapsed.tv_usec) / niters);
+  return elapsed.tv_sec*1000000 + elapsed.tv_usec;
 }
+
+/*==============================================================
+ * print_elapsed (prints timing statistics)
+ *==============================================================*/
+void print_elapsed(const char* desc, struct timeval* start, struct timeval* end, int niters) {
+  printf("\n %s total elapsed time = %ld (usec)",
+    desc, elapsed(start, end) / niters);
+}
+
 
 /*==============================================================
  *  Main Program (Parallel Summation)
@@ -62,7 +67,6 @@ int main(int argc, char *argv[]) {
   vector<long> data;
   vector<long> partial_sums;
   vector<long> prefix_sums;
-  vector<long> ps_partial_sums;
 
   struct timeval start, end;   /* gettimeofday stuff */
   struct timezone tzp;
@@ -84,11 +88,7 @@ int main(int argc, char *argv[]) {
   data.resize(numints);
 
   /* Allocate shared memory for partial_sums */
-  prefix_sums.resize(numints);
-
-  partial_sums.resize(numprocs);
-
-  ps_partial_sums.resize(numprocs+1, 0);
+  partial_sums.resize(numprocs+1, 0);
 
   /* Set number of threads */
   omp_set_num_threads(numprocs);
@@ -112,20 +112,23 @@ int main(int argc, char *argv[]) {
     vector<long>::iterator it_end = data.begin() + pos1;
 
     for(; it_cur != it_end ; ++it_cur) {
-
-      *it_cur = rand();   // avoid overflow
+      *it_cur = rand();
     }
   }
+
+  /* Make a copy of data as input for prefix sums */
 
   /*****************************************************
    * Generate the sum of the ints in parallel          *
    * NOTE: Repeated for numiterations                  *
    *****************************************************/
-  gettimeofday(&start, &tzp);
 
+  long totalTime = 0;
   for(int iteration=0; iteration < numiterations; ++iteration) {
+    prefix_sums = data;
 
-    #pragma omp parallel shared(numints_per_proc,data,prefix_sums,partial_sums, ps_partial_sums)
+    gettimeofday(&start, &tzp);
+    #pragma omp parallel shared(numints_per_proc,prefix_sums,partial_sums)
     {
       int tid;
 
@@ -135,33 +138,43 @@ int main(int argc, char *argv[]) {
       /* Compute the local prefix sums */
       int pos0 = tid*numints_per_proc;
       int pos1 = std::min(pos0+numints_per_proc, numints);
-      std::partial_sum(data.begin()+pos0, data.begin()+pos1, prefix_sums.begin()+pos0);
 
-      /* Write the partial result to share memory */
-      partial_sums[tid] = prefix_sums[pos1-1];
+      for(int pos = pos0+1;pos<pos1;++pos) 
+          prefix_sums[pos] += prefix_sums[pos-1];
+      partial_sums[tid+1] = prefix_sums[pos1-1];
+    }
 
-      #pragma omp barrier
-      if( tid == 0 ) {
-        /* Compute the prefix sum of the partial sums */
-        std::partial_sum(partial_sums.begin(), partial_sums.end(), ps_partial_sums.begin() + 1);
-      }
+    /* Compute the prefix sum of the partial sums */
+    for(int i=1;i<partial_sums.size();++i) partial_sums[i] += partial_sums[i-1];
 
-      #pragma omp barrier
+    #pragma omp parallel shared(numints_per_proc,prefix_sums,partial_sums)
+    {
+      int tid;
+
+      /* get the current thread ID in the parallel region */
+      tid = omp_get_thread_num();
+
       /* get the prefix sum of the partial sums */
-      long ps = ps_partial_sums[tid];
+      long ps = partial_sums[tid];
+
+      /* Compute the local prefix sums */
+      int pos0 = tid*numints_per_proc;
+      int pos1 = std::min(pos0+numints_per_proc, numints);
 
       /* add it back to the prefix sums */
-      std::for_each(prefix_sums.begin()+pos0, prefix_sums.begin()+pos1, [=](long &x){ x+=ps;});
+      for(int pos=pos0;pos<pos1;++pos) prefix_sums[pos] += ps;
     }
+
+    gettimeofday(&end,&tzp);
+    totalTime += elapsed(&start, &end);
   }
 
-  gettimeofday(&end,&tzp);
 
   /*****************************************************
    * Output timing results                             *
    *****************************************************/
 
-  print_elapsed("Prefix sum", &start, &end, numiterations);
+  std::cout << "Total elapsed time = " << totalTime / (double)numiterations << " (usec)" << std::endl; 
   std::cout << std::endl;
 
   std::ostream_iterator<int> out_it (std::cout," ");
