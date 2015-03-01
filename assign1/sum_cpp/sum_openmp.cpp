@@ -4,11 +4,12 @@
  */
 
 /*---------------------------------------------------------
- *  Parallel Summation 
+ *  Parallel Prefix Sum
  *
- *  1. Each thread generates numints random integers (in parallel OpenMP region)
- *  2. Each thread sums his numints random integers (in parallel OpenMP region)
- *  3  One thread sums the partial results.
+ *  1. Each thread generates roughly numints_per_proc random integers (in parallel OpenMP region)
+ *  2. Each thread computes the prefix sum of his numints_per_proc random integers (in parallel OpenMP region)
+ *  3  One thread computes the prefix sum of the partial results.
+ *  4. Each thread add back the partial prefix sum to his numints_per_proc prefix sums.
  *
  *  NOTE: steps 2-3 are repeated as many times as requested (numiterations)
  *---------------------------------------------------------*/
@@ -20,9 +21,12 @@
 #include <sys/resource.h>
 #include <sys/time.h>
 #include <omp.h>
+#include <iostream>
 #include <vector>
+#include <string>
 #include <algorithm>
-
+#include <iterator>
+#include <numeric>
 using namespace std;
 
 /*==============================================================
@@ -44,27 +48,6 @@ void print_elapsed(const char* desc, struct timeval* start, struct timeval* end,
     desc, (elapsed.tv_sec*1000000 + elapsed.tv_usec) / niters);
 }
 
-// Functor to sum the numbers
-template<typename T>
-struct sum_functor {
-
-  // Constructor
-  sum_functor() : m_sum(0) {
-  }
-
-  void operator() (int& num) {
-    m_sum +=num;
-  }
-
-  T get_sum() const {
-    return m_sum;
-  }
-
-  protected:
-
-  T m_sum;
-};
-
 /*==============================================================
  *  Main Program (Parallel Summation)
  *==============================================================*/
@@ -72,36 +55,44 @@ int main(int argc, char *argv[]) {
 
   int numints = 0;
   int numiterations = 0;
+  int numprocs = 0;
+  int numints_per_proc = 0;
 
-  vector<int> data;
+  vector<long> data;
   vector<long> partial_sums;
-
-  long total_sum = 0;
+  vector<long> prefix_sums;
 
   struct timeval start, end;   /* gettimeofday stuff */
   struct timezone tzp;
 
   if( argc < 3) {
-    printf("Usage: %s [numints] [numiterations]\n\n", argv[0]);
+    printf("Usage: %s [numprocs] [numints] [numiterations]\n\n", argv[0]);
     exit(1);
   }
 
-  numints       = atoi(argv[1]);
-  numiterations = atoi(argv[2]);
+  numprocs      = stoi(argv[1]);
+  numints       = stoi(argv[2]);
+  numiterations = stoi(argv[3]);
+  numints_per_proc = ceil(numints / (float)numprocs);
 
-  printf("\nExecuting %s: nthreads=%d, numints=%d, numiterations=%d\n",
-            argv[0], omp_get_max_threads(), numints, numiterations);
+  printf("\nExecuting %s: nthreads=%d, numints=%d, numints_per_proc=%d, numiterations=%d\n",
+            argv[0], numprocs, numints, numints_per_proc, numiterations);
 
   /* Allocate shared memory, enough for each thread to have numints*/
-  data.reserve(numints * omp_get_max_threads());
+  data.resize(numints);
 
   /* Allocate shared memory for partial_sums */
-  partial_sums.resize(omp_get_max_threads());
+  prefix_sums.resize(numints);
+
+  partial_sums.resize(numprocs);
+
+  /* Set number of threads */
+  omp_set_num_threads(numprocs);
 
   /*****************************************************
    * Generate the random ints in parallel              *
    *****************************************************/
-  #pragma omp parallel shared(numints,data) 
+  #pragma omp parallel shared(numints_per_proc, data)
   {
     int tid;
 
@@ -110,15 +101,15 @@ int main(int argc, char *argv[]) {
 
     srand(tid + time(NULL));    /* Seed rand functions */
 
-    vector<int>::iterator it_cur = data.begin();
-    std::advance(it_cur, tid * numints);
+    int pos0 = tid*numints_per_proc;
+    int pos1 = std::min(pos0+numints_per_proc, numints);
 
-    vector<int>::iterator it_end = it_cur;
-    std::advance(it_end, numints);
+    vector<long>::iterator it_cur = data.begin() + pos0;
+    vector<long>::iterator it_end = data.begin() + pos1;
 
     for(; it_cur != it_end ; ++it_cur) {
 
-      *it_cur = rand();
+      *it_cur = rand();   // avoid overflow
     }
   }
 
@@ -130,34 +121,42 @@ int main(int argc, char *argv[]) {
 
   for(int iteration=0; iteration < numiterations; ++iteration) {
 
-    #pragma omp parallel shared(numints,data,partial_sums,total_sum)
+    #pragma omp parallel shared(numints_per_proc,data,prefix_sums,partial_sums)
     {
       int tid;
 
       /* get the current thread ID in the parallel region */
       tid = omp_get_thread_num();
 
-      /* Compute the local partial sum */
-      long partial_sum = 0;
-
-      vector<int>::iterator it_cur = data.begin();
-      std::advance(it_cur, tid * numints);
-
-      vector<int>::iterator it_end = it_cur;
-      std::advance(it_end, numints);
-
-      sum_functor<long> result = std::for_each(it_cur, it_end, sum_functor<long>());
+      /* Compute the local prefix sums */
+      int pos0 = tid*numints_per_proc;
+      int pos1 = std::min(pos0+numints_per_proc, numints);
+      std::partial_sum(data.begin()+pos0, data.begin()+pos1, prefix_sums.begin()+pos0);
 
       /* Write the partial result to share memory */
-      partial_sums[tid] = result.get_sum();
+      partial_sums[tid] = prefix_sums[pos1-1];
     }
 
-    /* Compute the sum of the partial sums */
-    total_sum = 0;
-    int max_threads = omp_get_max_threads();
-    for(int i = 0; i < max_threads ; ++i) {
+    /* Compute the prefix sum of the partial sums */
+    vector<long> ps_partial_sums(partial_sums.size()+1, 0);
+    std::partial_sum(partial_sums.begin(), partial_sums.end(), ps_partial_sums.begin()+1);
 
-      total_sum += partial_sums[i];
+    /* Compute the final prefix sums */
+    #pragma omp parallel shared(numints_per_proc,data,prefix_sums,partial_sums)
+    {
+      int tid;
+
+      /* get the current thread ID in the parallel region */
+      tid = omp_get_thread_num();
+
+      /* get the prefix sum of the partial sums */
+      long ps = ps_partial_sums[tid];
+
+      int pos0 = tid*numints_per_proc;
+      int pos1 = std::min(pos0+numints_per_proc, numints);
+
+      /* add it back to the prefix sums */
+      std::for_each(prefix_sums.begin()+pos0, prefix_sums.begin()+pos1, [=](long &x){ x+=ps;});
     }
   }
 
@@ -167,8 +166,35 @@ int main(int argc, char *argv[]) {
    * Output timing results                             *
    *****************************************************/
 
-  print_elapsed("Summation", &start, &end, numiterations);
-  printf("\n Total sum = %6ld\n", total_sum);
+  print_elapsed("Prefix sum", &start, &end, numiterations);
+  std::cout << std::endl;
+
+  std::ostream_iterator<int> out_it (std::cout," ");
+  std::cout << "Input sequence: ";
+  std::copy(data.begin(), data.end(), out_it);
+  std::cout << std::endl;
+
+  std::cout << "Prefix sum: ";
+  std::copy(prefix_sums.begin(), prefix_sums.end(), out_it);
+  std::cout << std::endl;
+
+  /* Verify the result */
+  vector<long> result_gold(data.size());
+  std::partial_sum(data.begin(), data.end(), result_gold.begin());
+  if( std::equal(result_gold.begin(), result_gold.end(), prefix_sums.begin()) ) {
+    std::cout << "PASSED." << std::endl;
+  }
+  else {
+    std::cout << "Reference prefix sum: ";
+    std::copy(result_gold.begin(), result_gold.end(), out_it);
+    std::cout << std::endl;
+    std::cout << "FAILED." << std::endl;
+    for(int i=0;i<result_gold.size();++i) {
+      if( result_gold[i] != prefix_sums[i] ) {
+        std::cout << i << "\t" << prefix_sums[i] << "\t" << result_gold[i] << std::endl;
+      }
+    }
+  }
 
   return(0);
 }

@@ -5,7 +5,7 @@
 #
 CC     = g++     # the c compiler to use
 MPICC  = mpic++  # the MPI cc compiler
-CFLAGS = -O3     # optimize code
+CFLAGS = -O3 -std=c++11  # optimize code
 DFLAGS =         # common defines
 
 default:all
