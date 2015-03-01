@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <iterator>
 #include <numeric>
+#include <cmath>
 using namespace std;
 
 /*==============================================================
@@ -70,9 +71,9 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
-  numprocs      = stoi(argv[1]);
-  numints       = stoi(argv[2]);
-  numiterations = stoi(argv[3]);
+  numprocs      = atoi(argv[1]);
+  numints       = atoi(argv[2]);
+  numiterations = atoi(argv[3]);
   numints_per_proc = ceil(numints / (float)numprocs);
 
   printf("\nExecuting %s: nthreads=%d, numints=%d, numints_per_proc=%d, numiterations=%d\n",
