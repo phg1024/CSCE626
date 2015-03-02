@@ -29,6 +29,7 @@
 #include <cmath>
 #include <iostream>
 #include <iterator>
+#include <numeric>
 
 using namespace std;
 
@@ -286,7 +287,7 @@ int main(int argc, char **argv) {
 
     /* Write results */
     std::cout << "Input sequence: " << std::endl;
-    std::ostream_iterator<int> out_it(std::cout, " ");
+    std::ostream_iterator<long> out_it(std::cout, " ");
     std::copy(gmemory.begin(), gmemory.end(), out_it);
     std::cout << std::endl;
 

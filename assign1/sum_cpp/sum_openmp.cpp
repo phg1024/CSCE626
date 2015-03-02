@@ -177,7 +177,7 @@ int main(int argc, char *argv[]) {
   std::cout << "Total elapsed time = " << totalTime / (double)numiterations << " (usec)" << std::endl; 
   std::cout << std::endl;
 
-  std::ostream_iterator<int> out_it (std::cout," ");
+  std::ostream_iterator<long> out_it (std::cout," ");
   std::cout << "Input sequence: ";
   std::copy(data.begin(), data.end(), out_it);
   std::cout << std::endl;
