@@ -26,71 +26,49 @@
 #include <vector>
 #include <algorithm>
 #include <iostream>
+#include <cmath>
+#include <iostream>
+#include <iterator>
 
 using namespace std;
 
 /*==============================================================
  * p_generate_random_ints (processor-wise generation of random ints)
  *==============================================================*/
-void p_generate_random_ints(vector<int>& memory, int n) {
-
-  int i;
-
+void p_generate_random_ints(vector<long>& memory, int n) {
   /* generate & write this processor's random integers */
-  for (i = 0; i < n; ++i) {
-
+  for (int i = 0; i < n; ++i) {
     memory.push_back(rand());
   }
-  return;
+}
+
+void p_prefix_sum(vector<long>& memory) {
+  for(int i=1;i<memory.size();++i) {
+    memory[i]+=memory[i-1];
+  }
 }
 
 /*==============================================================
- * p_summation (processor-wise summation of ints)
+ * compute elapsed time between start and end
  *==============================================================*/
-
-// Functor to sum the numbers
-struct sum_functor {
-
-  // Constructor
-  sum_functor() : m_sum(0) {
-  }
-
-  void operator()(int& num) {
-    m_sum +=num;
-  }
-
-  long get_sum() const {
-    return m_sum;
-  }
-
-  protected:
-
-  long m_sum;
-};
-
-long p_summation(vector<int>& memory) {
-
-  sum_functor result = std::for_each(memory.begin(), memory.end(), sum_functor());
-  return result.get_sum();
-}
-
-/*==============================================================
- * print_elapsed (prints timing statistics)
- *==============================================================*/
- void print_elapsed(const char* desc, struct timeval* start, struct timeval* end, int niters) {
-
+long elapsed(struct timeval *start, struct timeval *end) {
   struct timeval elapsed;
   /* calculate elapsed time */
   if(start->tv_usec > end->tv_usec) {
-
     end->tv_usec += 1000000;
     end->tv_sec--;
   }
   elapsed.tv_usec = end->tv_usec - start->tv_usec;
   elapsed.tv_sec  = end->tv_sec  - start->tv_sec;
+  return elapsed.tv_sec*1000000 + elapsed.tv_usec;
+}
 
+/*==============================================================
+ * print_elapsed (prints timing statistics)
+ *==============================================================*/
+void print_elapsed(const char* desc, struct timeval* start, struct timeval* end, int niters) {
   printf("\n %s total elapsed time = %ld (usec)",
-    desc, (elapsed.tv_sec*1000000 + elapsed.tv_usec) / niters);
+          desc, elapsed(start, end) / niters);
 }
 
 /*==============================================================
@@ -98,14 +76,17 @@ long p_summation(vector<int>& memory) {
  *==============================================================*/
 int main(int argc, char **argv) {
 
-  int nprocs, numints, numiterations; /* command line args */
+  int nprocs, numints, numints_per_proc, numiterations; /* command line args */
 
   int my_id, iteration;
 
   long sum;             /* sum of each individual processor */
   long total_sum;       /* Total sum  */
 
-  vector<int> mymemory; /* Vector to store processes numbers        */
+  vector<long> gmemory; /* vector to store the input sequence */
+  vector<long> results;  /* vector to store the results */
+  vector<long> mymemory; /* Vector to store processes numbers */
+  vector<long> partial_sums;
   long* buffer;         /* Buffer for inter-processor communication */
 
   struct timeval gen_start, gen_end; /* gettimeofday stuff */
@@ -122,7 +103,8 @@ int main(int argc, char **argv) {
    * done explicitly using MPI communication functions.
    *---------------------------------------------------------*/
 
-  MPI_Init(&argc, &argv);
+  MPI::Init();
+  //MPI_Init(&argc, &argv);
   MPI_Comm_rank(MPI_COMM_WORLD, &my_id); /* Getting the ID for this process */
 
   /*---------------------------------------------------------
@@ -144,43 +126,72 @@ int main(int argc, char **argv) {
 
   MPI_Comm_size(MPI_COMM_WORLD, &nprocs); /* Get number of processors */
 
+  numints_per_proc = ceil(numints / (float)nprocs);
+  if( my_id == 0 ) {
+    partial_sums.resize(nprocs+1, 0);
+  }
+
   if(my_id == 0)
-    printf("\nExecuting %s: nprocs=%d, numints=%d, numiterations=%d\n",
-            argv[0], nprocs, numints, numiterations);
+    printf("\nExecuting %s: nprocs=%d, numints=%d, numints_per_proc=%d, numiterations=%d\n",
+            argv[0], nprocs, numints, numints_per_proc, numiterations);
 
   /*---------------------------------------------------------
    *  Initialization
    *  - allocate memory for work area structures and work area
    *---------------------------------------------------------*/
+  if( my_id == 0 ) {
+    gmemory.reserve(numints);
+    results.resize(numints);
+    /* get starting time */
+    gettimeofday(&gen_start, &tzp);
+    srand(my_id + time(NULL));                  /* Seed rand functions */
+    p_generate_random_ints(gmemory, numints);  /* random parallel fill */
+    gettimeofday(&gen_end, &tzp);
+    print_elapsed("Input generated", &gen_start, &gen_end, 1);
+  }
 
-  mymemory.reserve(numints);
+  int myint_first = my_id * numints_per_proc;
+  int myint_last = std::min(myint_first+numints_per_proc, numints);
+
+  mymemory.resize(myint_last - myint_first);
   buffer = (long *) malloc(sizeof(long));
 
   if(buffer == NULL) {
-
     printf("Processor %d - unable to malloc()\n", my_id);
     MPI_Finalize();
     exit(1);
   }
 
-  /* get starting time */
-  gettimeofday(&gen_start, &tzp);
-  srand(my_id + time(NULL));                  /* Seed rand functions */
-  p_generate_random_ints(mymemory, numints);  /* random parallel fill */
-  gettimeofday(&gen_end, &tzp);
-
-  if(my_id == 0) {
-
-    print_elapsed("Input generated", &gen_start, &gen_end, 1);
-  }
+  long totalTime = 0;
 
   MPI_Barrier(MPI_COMM_WORLD); /* Global barrier */
-  gettimeofday(&start, &tzp);
 
   /* repeat for numiterations times */
   for (iteration = 0; iteration < numiterations; iteration++) {
+    /* Pass the input sequence to all processors */
+    if( my_id == 0 ) {
+      // send out the integers
+      for(int i=1;i<nprocs;++i) {
+        int pos0 = i * numints_per_proc;
+        int pos1 = std::min(pos0+numints_per_proc, numints);
 
-    sum = p_summation(mymemory); /* Compute the local summation */
+        MPI_Send(&gmemory[pos0], pos1-pos0, MPI_LONG, i, 0, MPI_COMM_WORLD);
+      }
+      std::copy(gmemory.begin(), gmemory.begin()+numints_per_proc, mymemory.begin());
+    }
+    else {
+        int pos0 = my_id * numints_per_proc;
+        int pos1 = std::min(pos0+numints_per_proc, numints);
+
+        MPI_Recv(&mymemory[0], pos1-pos0, MPI_LONG, 0, 0, MPI_COMM_WORLD, &status);
+    }
+
+    /* Make sure everybody gets the data */
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    gettimeofday(&start, &tzp);
+
+    p_prefix_sum(mymemory); /* Compute the local prefix sum */
 
     /*---------------------------------------------------------------------
      * Procesor-wise sums are sent by all the other processors to the master procesor
@@ -188,39 +199,118 @@ int main(int argc, char **argv) {
      *-------------------------------------------------------------------*/
 
     if (my_id == 0) {
-
       /*this is the master processor*/
-
-      /*init total sum with p0's sum*/
-      total_sum = sum;
-
+      /*get the partial sum value from every body*/
       for(int i = 1; i < nprocs; ++i) {
 
         /* Receive the message from the ANY processor */
         /* The message is stored into "buffer" variable */
-        MPI_Recv(buffer, 1, MPI_LONG, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
+        MPI_Recv(buffer, 1, MPI_LONG, i, 0, MPI_COMM_WORLD, &status);
 
         /* Add the processor-wise sum to the total sum */
-        total_sum += *buffer;
+        partial_sums[i+1] = *buffer;
       }
     }
     else {
 
       /* this is not the master processor */
       /* Send the local sum to the master process, which has ID = 0 */
-      MPI_Send(&sum, 1, MPI_LONG, 0, 0, MPI_COMM_WORLD);
+      long local_prefix = mymemory.back();
+      MPI_Send(&local_prefix, 1, MPI_LONG, 0, 0, MPI_COMM_WORLD);
     }
 
-    /* Processor 0 sends the result to all other processors */
-    MPI_Bcast (&total_sum, 1, MPI_LONG, 0, MPI_COMM_WORLD);
+    /* Make sure all partial sums are sent to master */
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    /* Computer prefix sum of the partial sums */
+    if( my_id == 0 ) {
+      partial_sums[1] = mymemory.back();
+      for(int i=1;i<nprocs+1;++i) {
+        partial_sums[i] += partial_sums[i-1];
+      }
+    }
+
+    /* Master send back the prefix sum of partial sums */
+    if( my_id == 0 ) {
+      for(int i=1;i<nprocs;++i) {
+        MPI_Send(&partial_sums[i], 1, MPI_LONG, i, 0, MPI_COMM_WORLD);
+      }
+    }
+    else {
+      MPI_Recv(buffer, 1, MPI_LONG, 0, 0, MPI_COMM_WORLD, &status);
+    }
+
+    /* Every node except master add back partial prefix sum */
+    if( my_id > 0 ) {
+      for(int i=0;i<mymemory.size();++i) {
+        mymemory[i] += *buffer;
+      }
+    }
+
+    /* Make sure every node finishes the computation */
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    if(my_id == 0) {
+      gettimeofday(&end,&tzp);
+
+      totalTime += elapsed(&start, &end);
+    }
   }
 
-  if(my_id == 0) {
+  /* Pass the results back to master */
+  if( my_id == 0 ) {
+    // send out the integers
+    for(int i=1;i<nprocs;++i) {
+      int pos0 = i * numints_per_proc;
+      int pos1 = std::min(pos0+numints_per_proc, numints);
 
-    gettimeofday(&end,&tzp);
+      MPI_Recv(&results[pos0], pos1-pos0, MPI_LONG, i, 0, MPI_COMM_WORLD, &status);
+    }
 
-    print_elapsed("Summation", &start, &end, numiterations);
-    printf("\n Total sum = %6ld\n", total_sum);
+    std::copy(mymemory.begin(), mymemory.end(), results.begin());
+  }
+  else {
+    int pos0 = my_id * numints_per_proc;
+    int pos1 = std::min(pos0+numints_per_proc, numints);
+
+    MPI_Send(&mymemory[0], pos1-pos0, MPI_LONG, 0, 0, MPI_COMM_WORLD);
+  }
+  /* Make sure master gets all partial results */
+  MPI_Barrier(MPI_COMM_WORLD);
+
+
+  if( my_id == 0 ) {
+    std::cout << std::endl;
+    std::cout << "Total elapsed time = " << totalTime / (double)numiterations << " (usec)" << std::endl;
+    std::cout << std::endl;
+
+    /* Write results */
+    std::cout << "Input sequence: " << std::endl;
+    std::ostream_iterator<int> out_it(std::cout, " ");
+    std::copy(gmemory.begin(), gmemory.end(), out_it);
+    std::cout << std::endl;
+
+    std::cout << "Prefix sums: " << std::endl;
+    std::copy(results.begin(), results.end(), out_it);
+    std::cout << std::endl;
+
+    /* Verify the result */
+    vector<long> result_gold(gmemory.size());
+    std::partial_sum(gmemory.begin(), gmemory.end(), result_gold.begin());
+    if (std::equal(result_gold.begin(), result_gold.end(), results.begin())) {
+      std::cout << "PASSED." << std::endl;
+    }
+    else {
+      std::cout << "Reference prefix sum: ";
+      std::copy(result_gold.begin(), result_gold.end(), out_it);
+      std::cout << std::endl;
+      std::cout << "FAILED." << std::endl;
+      for (int i = 0; i < result_gold.size(); ++i) {
+        if (result_gold[i] != results[i]) {
+          std::cout << i << "\t" << results[i] << "\t" << result_gold[i] << std::endl;
+        }
+      }
+    }
   }
 
   /*---------------------------------------------------------
