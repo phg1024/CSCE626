@@ -1,0 +1,12 @@
+#PBS -l nodes=1:ppn=8
+#PBS -l walltime=00:05:00
+#PBS -l mem=4gb
+#PBS -N prefixsum_openmp_8threads
+#PBS -S /bin/bash
+#PBS -j oe
+# $PBS_O_WORKDIR is the directory from which the job was submitted
+cd $PBS_O_WORKDIR
+source setup_env.sh
+./prefixsum_openmp 8 10000000 16 > output.txt
+#---------------- end of job file --------------------------
+

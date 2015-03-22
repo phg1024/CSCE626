@@ -1,0 +1,7 @@
+Activated IntelXE (13.1) Compiler set (13.1.2-183). See: module help intel/compilers/13.1.2.183
+Activated Intel XE (13.1) MKL 11.0.4. Use ' module help intel/mkl/11.0.4.183' for help.
+Activated environment for using: Matlab r2013a
+Welcome to git software, version 1.7.1.1
+Type 'man git' for help.
+Activated IntelXE (13.1) Compiler set (13.1.2-183). See: module help intel/compilers/13.1.2.183
+Activated OpenMPI 1.6.5 with IntelXE (13.3) compiler set; $ module help openmpi/1.6.5-intel

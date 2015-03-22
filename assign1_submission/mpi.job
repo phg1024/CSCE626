@@ -1,0 +1,12 @@
+#PBS -l nodes=16:nehalem:ppn=1
+#PBS -l walltime=00:05:00
+#PBS -l mem=4gb
+#PBS -N prefixsum_mpi_16nodes_1threads
+#PBS -S /bin/bash
+#PBS -j oe
+# $PBS_O_WORKDIR is the directory from which the job was submitted
+cd $PBS_O_WORKDIR
+source setup_env.sh
+mpirun -np 16 ./prefixsum_mpi 10000000 16 > output.txt
+#---------------- end of job file --------------------------
+

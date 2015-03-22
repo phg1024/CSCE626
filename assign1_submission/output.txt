@@ -1,0 +1,5 @@
+
+Executing ./prefixsum_openmp: nthreads=8, numints=10000000, numints_per_proc=1250000, numiterations=16
+Total elapsed time = 19102.9 (usec)
+
+PASSED.
