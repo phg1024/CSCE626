@@ -1,0 +1,66 @@
+**************************************
+CSCE 626
+Parallel prefix sum in MPI and OpenMP
+**************************************
+
+List of files
+==================
+
+setup_env.sh This file is used to setup the environment to compile and run MPI and
+             OpenMP programs on Eos. Make sure you execute the following command
+             from your current shell
+             $ source <path to setup_env.sh> setup_env.sh
+             before you try to compile/run. A good practice is to place the above
+             line in your ~/.bashrc
+
+prefixsum_mpi.cpp: MPI implementation for parallel prefix sum. Uses explicit MPI calls for communication.
+
+prefixsum_openmp.cpp: OpenMP implementation for parallel prefix sum.
+
+Makefile: File for compilation of the code files and clean up of the executables.
+
+Compiling on Eos
+==================
+$ make
+
+This will generate 2 executable prefixsum_mpi and prefixsum_openmp.
+
+Running Interactively on Eos
+============================
+The processor limit for running jobs interactively (i.e. directly through the shell)
+is 4. Therefore, for interactive test runs (for both MPI and OpenMP programs), please
+do not exceed the concurrent use of more that 4 processors.
+
+More information can be found on:
+http://sc.tamu.edu/help/eos/login.php
+
+For running programs with larger number of processors, you will need to use the batch
+processing system. More information about batch processing can be found at:
+http://sc.tamu.edu/help/eos/batch/
+
+
+Running MPI on Eos
+====================
+
+$ mpirun -np 2 prefixsum_mpi 32000 100
+
+This runs "prefixsum_mpi" on 2 mpi processes to compute prefix sums of 32000 ints. It runs 100 iterations. This run does not output the input array nor the prefix sums.
+
+$ mpirun -np 16 prefixsum_mpi 1000000 32 -o
+
+This runs "prefixsum_mpi" on 16 mpi processes to compute prefix sums of 1000000 ints. It runs 32 iterations. This run outputs the input array and the prefix sums to screen. To redirect the output to a file, use > operator.
+
+
+Running OpenMP on Eos
+=======================
+$ ./prefixsum_openmp 4 32000 100
+
+This runs "prefixsum_openmp" on 4 threads to compute prefix sums of 32000 ints. It runs 100 iterations. This run does not output the input array nor the prefix sums.
+
+
+$ ./prefixsum_openmp 8 1000000 32 -o
+
+This runs "prefixsum_openmp" on 8 threads to compute prefix sums of 1000000 ints. It runs 32 iterations. This run outputs the input array and the prefix sums to screen. To redirect the output to a file, use > operator.
+Cleanup
+=======
+$ make clean
